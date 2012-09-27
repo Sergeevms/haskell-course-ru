@@ -1,8 +1,8 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 module ITMOPrelude.Primitive where
 
-import Prelude (Show,Read)
-
+import Prelude (error,Show,Read)
+import qualified Prelude as P
 ---------------------------------------------
 -- Синтаксис лямбда-выражений
 
@@ -86,22 +86,22 @@ natOne = Succ Zero -- 1
 
 -- Сравнивает два натуральных числа
 natCmp :: Nat -> Nat -> Tri
-natCmp = undefined
+natCmp Zero Zero = EQ
+natCmp Zero (Succ a) = LT
+natCmp (Succ a) Zero = GT
+natCmp (Succ a) (Succ b) = natCmp a b
 
 -- n совпадает с m 
 natEq :: Nat -> Nat -> Bool
-natEq Zero     Zero     = True
-natEq Zero     (Succ _) = False
-natEq (Succ _) Zero     = False
-natEq (Succ n) (Succ m) = natEq n m
+natEq n m = case (natCmp n m) of
+                EQ -> True
+                _  -> False
 
 -- n меньше m
 natLt :: Nat -> Nat -> Bool
-natLt Zero     Zero     = False
-natLt Zero     (Succ m) = True
-natLt (Succ n) Zero     = False
-natLt (Succ n) (Succ m) = natLt n m
-
+natLt n m = case (natCmp n m) of
+                LT -> True
+                _  -> False
 infixl 6 +.
 -- Сложение для натуральных чисел
 (+.) :: Nat -> Nat -> Nat
@@ -111,7 +111,9 @@ Zero     +. m = m
 infixl 6 -.
 -- Вычитание для натуральных чисел
 (-.) :: Nat -> Nat -> Nat
-n -. m = undefined
+n -. Zero = n
+(Succ n) -. (Succ m) = n -. m
+Zero     -. (Succ m) = error"result isn't Natural number"
 
 infixl 7 *.
 -- Умножение для натуральных чисел
@@ -121,86 +123,149 @@ Zero     *. m = Zero
 
 -- Целое и остаток от деления n на m
 natDivMod :: Nat -> Nat -> Pair Nat Nat
-natDivMod n m = undefined
 
-natDiv n = fst . natDivMod n -- Целое
+natDivMod n m = case (natCmp n m) of
+                LT -> Pair Zero n
+                EQ -> Pair (Succ Zero) Zero
+                GT -> Pair (Succ (fst new)) (snd new) where
+                    new = natDivMod (n -. m) m
+
+natDiv n = fst . natDivMod n
 natMod n = snd . natDivMod n -- Остаток
 
 -- Поиск GCD алгоритмом Евклида (должен занимать 2 (вычислителельная часть) + 1 (тип) строчки)
 gcd :: Nat -> Nat -> Nat
-gcd = undefined
+gcd n Zero = n
+gcd n m = gcd m (natMod n m)
 
 -------------------------------------------
 -- Целые числа
 
 -- Требуется, чтобы представление каждого числа было единственным
-data Int = UNDEFINED deriving (Show,Read)
+data Int = Pos Nat | Neg Nat deriving (Show,Read)
 
-intZero   = undefined   -- 0
-intOne    = undefined     -- 1
-intNegOne = undefined -- -1
+intZero   = Pos Zero   -- 0
+intOne    = Pos (Succ Zero)-- 1
+intNegOne = Neg Zero-- -1
 
 -- n -> - n
 intNeg :: Int -> Int
-intNeg = undefined
+intNeg (Pos Zero) = (Pos Zero)
+intNeg (Pos n) = Neg (n -. natOne)
+intNeg (Neg n) = Pos (n +. natOne)
 
 -- Дальше также как для натуральных
 intCmp :: Int -> Int -> Tri
-intCmp = undefined
+intCmp (Neg n) (Pos m) = LT 
+intCmp (Pos n) (Neg m) = GT 
+intCmp (Pos n) (Pos m) = natCmp n m
+intCmp (Neg n) (Neg m) = natCmp n m 
 
 intEq :: Int -> Int -> Bool
-intEq = undefined
+intEq n m = case (intCmp n m) of
+                EQ -> True
+                _  -> False
 
 intLt :: Int -> Int -> Bool
-intLt = undefined
+intLt n m = case (intCmp n m) of
+                LT -> True
+                _  -> False
 
 infixl 6 .+., .-.
 -- У меня это единственный страшный терм во всём файле
 (.+.) :: Int -> Int -> Int
-n .+. m = undefined
+Pos n .+. Pos m = Pos (n +. m)
+Neg n .+. Neg m = Neg (Succ (n +. m))
+Pos n .+. Neg m = case (natCmp n x) of
+                    EQ -> intZero
+                    LT -> Neg (m -. n)
+                    GT -> Pos (n -. x)
+                    where x = Succ (m)
+Neg n .+. Pos m = Pos m .+. Neg n
 
 (.-.) :: Int -> Int -> Int
 n .-. m = n .+. (intNeg m)
 
 infixl 7 .*.
 (.*.) :: Int -> Int -> Int
-n .*. m = undefined
+(Pos n) .*. (Pos m) = Pos (n *. m)
+(Neg n) .*. (Neg m) = Pos ((Succ n) *. (Succ m))
+(Neg n) .*. (Pos m) = intNeg (Pos ((Succ n) *. m))
+(Pos n) .*. (Neg m) = (Neg m) .*. (Pos n)
 
 -------------------------------------------
 -- Рациональные числа
 
 data Rat = Rat Int Nat
 
+ratNorm :: Rat -> Rat
+ratNorm (Rat (Pos (Zero)) _) = Rat (Pos (Zero)) natOne 
+ratNorm (Rat _ Zero) = error"Division by Zero"
+ratNorm (Rat (Pos n) m) = Rat (Pos (natDiv n g)) (natDiv m g) where g = gcd n m
+ratNorm (Rat (Neg n) m) = Rat (Neg (natDiv (n +. natOne) g -. natOne)) (natDiv m g) where 
+        g = gcd (n +. natOne) m
+
 ratNeg :: Rat -> Rat
 ratNeg (Rat x y) = Rat (intNeg x) y
 
 -- У рациональных ещё есть обратные элементы
 ratInv :: Rat -> Rat
-ratInv = undefined
+ratInv (Rat (Pos n) m) = Rat (Pos m) n
+ratInv (Rat (Neg n) m) = Rat (Neg (m -. natOne)) (n +. natOne)
 
 -- Дальше как обычно
 ratCmp :: Rat -> Rat -> Tri
-ratCmp = undefined
+ratCmp (Rat a1 b1) (Rat a2 b2) = intCmp (a1 .*. Pos b2) (a2 .*. Pos b1) 
 
 ratEq :: Rat -> Rat -> Bool
-ratEq = undefined
+ratEq a b = case (ratCmp a b) of
+            EQ -> True
+            _  -> False
 
 ratLt :: Rat -> Rat -> Bool
-ratLt = undefined
+ratLt a b = case (ratCmp a b) of
+            LT -> True
+            _  -> False
 
 infixl 7 %+, %-
 (%+) :: Rat -> Rat -> Rat
-n %+ m = undefined
+(Rat a b ) %+ (Rat c d ) = ratNorm (Rat x y) where
+    x = (a .*. (Pos (d))) .+. (c .*. (Pos (b)))
+    y = (b *. d)
 
 (%-) :: Rat -> Rat -> Rat
 n %- m = n %+ (ratNeg m)
 
 infixl 7 %*, %/
 (%*) :: Rat -> Rat -> Rat
-n %* m = undefined
-
+(Rat a b) %* (Rat c d) = ratNorm (Rat (a .*. c) (b *. d))
 (%/) :: Rat -> Rat -> Rat
 n %/ m = n %* (ratInv m)
+
+-- Перевод между новыми типами и стандартным Integer
+natToInteger :: Nat -> P.Integer
+natToInteger Zero = 0
+natToInteger (Succ n) = 1 P.+ natToInteger n
+
+integerToNat :: P.Integer -> Nat
+integerToNat n | n P.== 0 = Zero
+               | n P.> 0 = Succ (integerToNat (n P.- 1))
+               | n P.< 0 = error "Input isn't Natural number"
+
+intToInteger :: Int -> P.Integer
+intToInteger (Pos Zero) = 0
+intToInteger (Pos n) = natToInteger n
+intToInteger (Neg n) = P.negate ((natToInteger n) P.+ 1)
+
+integerToInt :: P.Integer -> Int
+integerToInt n | n P.>= 0 = Pos (integerToNat n)
+               | n P.< 0  = Neg (integerToNat (P.negate(n P.+ 1)))
+
+ratToInteger :: Rat -> Pair P.Integer P.Integer
+ratToInteger (Rat a b) = Pair (intToInteger a) (natToInteger b)
+
+integerToRat :: P.Integer -> P.Integer -> Rat
+integerToRat a b = ratNorm (Rat (integerToInt a) (integerToNat b))
 
 -------------------------------------------
 -- Операции над функциями.
